@@ -10,8 +10,31 @@ export default function Chatbot() {
   const [input, setInput] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [tables, setTables] = useState({});
+  const [clarification, setClarification] = useState(null);
+  const [selectedColumn, setSelectedColumn] = useState('');
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+
+  // Fetch table schemas on mount
+  useEffect(() => {
+    const fetchTables = async () => {
+      try {
+        const response = await axios.get(`${process.env.REACT_APP_API_URL}/tables`);
+        setTables(response.data.tables);
+      } catch (error) {
+        console.error('Error fetching table schemas:', error);
+      }
+    };
+    fetchTables();
+  }, []);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,19 +46,38 @@ export default function Chatbot() {
     setIsLoading(true);
 
     try {
+      const queryText = clarification && selectedColumn
+        ? `${input} (search in column: ${selectedColumn})`
+        : input;
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/query`,
-        { text: input },
+        { text: queryText },
         { headers: { 'Content-Type': 'application/json' } }
       );
-      const botMessage = {
-        role: 'assistant',
-        type: response.data.type,
-        content: response.data.result.replace(/^"|"$/g, '').trim(), // Remove quotes
-        sql: response.data.sql, // For NLQ
-        source_documents: response.data.source_documents, // For RAG
-      };
-      setMessages((prev) => [...prev, botMessage]);
+
+      if (response.data.type === 'clarification_needed') {
+        setClarification({
+          message: response.data.result,
+          table: response.data.table,
+          columns: response.data.result.match(/\[.*?\]/)[0].slice(1, -1).split(', ').map(col => col.replace(/'/g, '')),
+        });
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', type: 'clarification_needed', content: response.data.result }
+        ]);
+      } else {
+        setClarification(null);
+        setSelectedColumn('');
+        const botMessage = {
+          role: 'assistant',
+          type: response.data.type,
+          content: response.data.result.replace(/^"|"$/g, '').trim(),
+          sql: response.data.sql,
+          source_documents: response.data.source_documents,
+          latency: response.data.latency,
+        };
+        setMessages((prev) => [...prev, botMessage]);
+      }
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -53,15 +95,12 @@ export default function Chatbot() {
     }
   };
 
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
+  const handleColumnSelect = (e) => {
+    setSelectedColumn(e.target.value);
+  };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col mt-2 h-[calc(100vh-15rem)]">
       {/* Chat Area */}
       <div
         ref={chatContainerRef}
@@ -84,7 +123,7 @@ export default function Chatbot() {
               >
                 {msg.role === 'assistant' && msg.type === 'RAG' ? (
                   <div>
-                    <p><strong>Type:</strong> RAG</p>
+                    {/* <p><strong>Type:</strong> RAG</p> */}
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                     {msg.source_documents && (
                       <>
@@ -92,18 +131,26 @@ export default function Chatbot() {
                         <ul className="list-disc pl-5">
                           {msg.source_documents.map((doc, i) => (
                             <li key={i}>
-                              {doc.filename} (ID: {doc.file_id})
+                              {doc.filename}
                             </li>
                           ))}
                         </ul>
                       </>
                     )}
+                    {/* {msg.latency && (
+                      <p><strong>Latency:</strong> Total {msg.latency.total.toFixed(3)}s (Classification: {msg.latency.classification.toFixed(3)}s, RAG: {msg.latency.rag?.toFixed(3)}s)</p>
+                    )} */}
                   </div>
                 ) : msg.role === 'assistant' && msg.type === 'NLQ' ? (
                   <div>
-                    <p><strong>Type:</strong> NLQ</p>
-                    <p><strong>SQL:</strong> {msg.sql}</p>
-                    <p><strong>Result:</strong></p>
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    {msg.latency && (
+                      <p><strong>Latency:</strong> Total {msg.latency.total.toFixed(3)}s (Classification: {msg.latency.classification.toFixed(3)}s, SQL: {msg.latency.sql.toFixed(3)}s, LLM: {msg.latency.llm.toFixed(3)}s)</p>
+                    )}
+                  </div>
+                ) : msg.role === 'assistant' && msg.type === 'clarification_needed' ? (
+                  <div>
+                    <p><strong>Type:</strong> Clarification Needed</p>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                 ) : (
@@ -115,6 +162,30 @@ export default function Chatbot() {
           </div>
         )}
       </div>
+
+      {/* Clarification Dropdown */}
+      {clarification && (
+        <div className="bg-gray-100 dark:bg-gray-800 p-4 max-w-4xl mx-auto">
+          <p className="text-gray-800 dark:text-gray-100 mb-2">{clarification.message}</p>
+          <select
+            value={selectedColumn}
+            onChange={handleColumnSelect}
+            className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"
+          >
+            <option value="">Select a column</option>
+            {clarification.columns.map((col, idx) => (
+              <option key={idx} value={col}>{col}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleSubmit}
+            disabled={!selectedColumn || isLoading}
+            className="mt-2 p-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+          >
+            Submit
+          </button>
+        </div>
+      )}
 
       {/* Loading Indicator */}
       {isLoading && (
