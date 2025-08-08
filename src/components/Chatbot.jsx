@@ -123,7 +123,7 @@ export default function Chatbot() {
               >
                 {msg.role === 'assistant' && msg.type === 'RAG' ? (
                   <div>
-                    {/* <p><strong>Type:</strong> RAG</p> */}
+                    <p><strong>Type:</strong> RAG</p>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                     {msg.source_documents && (
                       <>
@@ -143,6 +143,7 @@ export default function Chatbot() {
                   </div>
                 ) : msg.role === 'assistant' && msg.type === 'NLQ' ? (
                   <div>
+                    <p><strong>Type:</strong> NLQ</p>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                     {msg.latency && (
                       <p><strong>Latency:</strong> Total {msg.latency.total.toFixed(3)}s (Classification: {msg.latency.classification.toFixed(3)}s, SQL: {msg.latency.sql.toFixed(3)}s, LLM: {msg.latency.llm.toFixed(3)}s)</p>
