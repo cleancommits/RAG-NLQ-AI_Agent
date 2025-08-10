@@ -16,18 +16,20 @@ export default function Chatbot() {
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
 
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
   // Fetch table schemas on mount
   useEffect(() => {
     const fetchTables = async () => {
       try {
-        const response = await axios.get(`${process.env.REACT_APP_API_URL}/tables`);
-        setTables(response.data.tables);
+        const response = await axios.get(`${API_URL}/tables`);
+        setTables(response.data.tables || {});
       } catch (error) {
         console.error('Error fetching table schemas:', error);
       }
     };
     fetchTables();
-  }, []);
+  }, [API_URL]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -37,11 +39,11 @@ export default function Chatbot() {
   }, [messages]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     if (!input.trim()) return;
 
     const userMessage = { role: 'user', content: input };
-    setMessages([...messages, userMessage]);
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
@@ -49,36 +51,51 @@ export default function Chatbot() {
       const queryText = clarification && selectedColumn
         ? `${input} (search in column: ${selectedColumn})`
         : input;
+
+      // IMPORTANT: send { query: ... } to match backend
       const response = await axios.post(
-        `${process.env.REACT_APP_API_URL}/query`,
-        { text: queryText },
+        `${API_URL}/query`,
+        { query: queryText },
         { headers: { 'Content-Type': 'application/json' } }
       );
 
-      if (response.data.type === 'clarification_needed') {
+      const data = response.data || {};
+      // If server sends a clarification type (you may implement this server-side later)
+      if (data.type === 'clarification_needed') {
+        // Attempt to parse column list if present inside result text
+        let cols = [];
+        try {
+          const match = data.result && data.result.match(/\[.*?\]/);
+          if (match && match[0]) {
+            cols = match[0].slice(1, -1).split(',').map(c => c.replace(/'/g, '').trim());
+          }
+        } catch (err) {
+          console.warn('Failed to parse columns from clarification message', err);
+        }
         setClarification({
-          message: response.data.result,
-          table: response.data.table,
-          columns: response.data.result.match(/\[.*?\]/)[0].slice(1, -1).split(', ').map(col => col.replace(/'/g, '')),
+          message: data.result,
+          table: data.table,
+          columns: cols
         });
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', type: 'clarification_needed', content: response.data.result }
+          { role: 'assistant', type: 'clarification_needed', content: data.result }
         ]);
       } else {
         setClarification(null);
         setSelectedColumn('');
         const botMessage = {
           role: 'assistant',
-          type: response.data.type,
-          content: response.data.result.replace(/^"|"$/g, '').trim(),
-          sql: response.data.sql,
-          source_documents: response.data.source_documents,
-          latency: response.data.latency,
+          type: data.type || 'RAG',
+          content: (data.result || '').replace(/^"|"$/g, '').trim(),
+          sql: data.sql,
+          source_documents: data.source_documents || [],
+          latency: data.latency || {}
         };
         setMessages((prev) => [...prev, botMessage]);
       }
     } catch (error) {
+      console.error('Query error', error);
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: `Error: ${error.response?.data?.detail || error.message}` },
@@ -125,28 +142,28 @@ export default function Chatbot() {
                   <div>
                     <p><strong>Type:</strong> RAG</p>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    {msg.source_documents && (
+                    {msg.source_documents && msg.source_documents.length > 0 && (
                       <>
                         <p><strong>Source Documents:</strong></p>
                         <ul className="list-disc pl-5">
                           {msg.source_documents.map((doc, i) => (
                             <li key={i}>
-                              {doc.filename}
+                              {typeof doc === 'string' ? doc : doc.filename || JSON.stringify(doc)}
                             </li>
                           ))}
                         </ul>
                       </>
                     )}
-                    {/* {msg.latency && (
-                      <p><strong>Latency:</strong> Total {msg.latency.total.toFixed(3)}s (Classification: {msg.latency.classification.toFixed(3)}s, RAG: {msg.latency.rag?.toFixed(3)}s)</p>
-                    )} */}
                   </div>
                 ) : msg.role === 'assistant' && msg.type === 'NLQ' ? (
                   <div>
                     <p><strong>Type:</strong> NLQ</p>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    {msg.sql && (
+                      <pre className="mt-2 text-xs bg-gray-100 p-2 rounded">{msg.sql}</pre>
+                    )}
                     {msg.latency && (
-                      <p><strong>Latency:</strong> Total {msg.latency.total.toFixed(3)}s (Classification: {msg.latency.classification.toFixed(3)}s, SQL: {msg.latency.sql.toFixed(3)}s, LLM: {msg.latency.llm.toFixed(3)}s)</p>
+                      <p className="mt-2 text-xs"><strong>Latency:</strong> {msg.latency.total?.toFixed(3)}s</p>
                     )}
                   </div>
                 ) : msg.role === 'assistant' && msg.type === 'clarification_needed' ? (
@@ -174,7 +191,7 @@ export default function Chatbot() {
             className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"
           >
             <option value="">Select a column</option>
-            {clarification.columns.map((col, idx) => (
+            {clarification.columns && clarification.columns.map((col, idx) => (
               <option key={idx} value={col}>{col}</option>
             ))}
           </select>
