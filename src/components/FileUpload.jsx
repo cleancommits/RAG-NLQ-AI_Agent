@@ -14,7 +14,7 @@ export default function FileUpload({ onClose }) {
       acceptedFiles.forEach(file => formData.append('files', file));
       try {
         const response = await axios.post(`${process.env.REACT_APP_API_URL}/upload`, formData);
-        setStatus(`Uploaded: ${JSON.stringify(response.data)}`);
+        setStatus(`Uploaded: ${JSON.stringify(response.data.message)}`);
       } catch (error) {
         setStatus(`Error: ${error.response?.data?.detail || error.message}`);
       }

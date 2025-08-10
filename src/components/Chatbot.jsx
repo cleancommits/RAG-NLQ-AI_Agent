@@ -159,9 +159,9 @@ export default function Chatbot() {
                   <div>
                     <p><strong>Type:</strong> NLQ</p>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    {msg.sql && (
+                    {/* {msg.sql && (
                       <pre className="mt-2 text-xs bg-gray-100 p-2 rounded">{msg.sql}</pre>
-                    )}
+                    )} */}
                     {msg.latency && (
                       <p className="mt-2 text-xs"><strong>Latency:</strong> {msg.latency.total?.toFixed(3)}s</p>
                     )}
