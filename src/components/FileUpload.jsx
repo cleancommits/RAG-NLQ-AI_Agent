@@ -10,17 +10,15 @@ export default function FileUpload({ onClose }) {
     accept: { 'application/pdf': ['.pdf'], 'text/csv': ['.csv'] },
     onDrop: async (acceptedFiles) => {
       setStatus('Uploading...');
-      for (const file of acceptedFiles) {
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-          const response = await axios.post(`${process.env.REACT_APP_API_URL}/upload`, formData);
-          setStatus(`Uploaded: ${response.data.filename}`);
-        } catch (error) {
-          setStatus(`Error: ${error.response?.data?.detail || error.message}`);
-        }
+      const formData = new FormData();
+      acceptedFiles.forEach(file => formData.append('files', file));
+      try {
+        const response = await axios.post(`${process.env.REACT_APP_API_URL}/upload`, formData);
+        setStatus(`Uploaded: ${JSON.stringify(response.data)}`);
+      } catch (error) {
+        setStatus(`Error: ${error.response?.data?.detail || error.message}`);
       }
-    },
+    }
   });
 
   return (
